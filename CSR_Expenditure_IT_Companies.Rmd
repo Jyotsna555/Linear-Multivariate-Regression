@@ -1,0 +1,528 @@
+---
+title: "CSR Expenditure by IT Companies in India"
+author: "Jyotsna Pandit"
+date: "2024-05-24"
+output: html_document
+---
+
+# Multivariable Linear Regression Model
+
+This project assesses the variables in annual financial statements of 297 IT companies in India. The dependent variable is CSR expenditure as per the Companies Act 2013 (in Rs. Million) and independent variables are:
+
+
+* Sales
+* Profits
+* Income from financial services
+* Total Expenses
+* Total Liabilities
+* Total Assets
+
+(in Rs. Million)
+
+
+## Data
+
+The data has been extracted from ProwessIQ Software owned by Centre for Monitoring Indian Economy (CMIE).
+CMIE is an is an independent private limited entity that serves both as an economic think-tank as well as a business information company.
+The data is in .xlsx format
+
+### Packages Used
+
+In this project, we will be using packages - Tidyverse, dplyr, readxl, lmtest, car for now.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("C:/Users/Jyotsna/My_Github/Linear-Multivariate-Regression")
+```
+
+### Installing the libraries to be used in this project...
+
+```{r installing libraries}
+# Set the CRAN mirror
+options(repos = c(CRAN = "https://cloud.r-project.org"))
+
+#install.packages("tidyverse")
+#install.packages("dplyr")
+#install.packages("readxl")
+#install.packages("lmtest")
+#install.packages("car")
+```
+
+
+### Loading all packages using Library()
+
+```{r loading packages}
+library(tidyverse)
+library(dplyr)
+library(readxl)
+library(ggplot2)
+library(lmtest)
+library(car)
+```
+
+
+### Reading the excel file
+
+The excel file is read and a glimpse of the data is taken. 
+Here, the column names represent the following financial variables:-
+
+ * "sales" = Sales
+ *  "pnl" = Profits
+ *  "fin" = Income from financial services
+ *  "expenses" = Total Expenses
+ *  "liabilities" = Total Liabilities
+ *  "assets" = Total Assets
+
+```{r reading excel}
+mydata <- read_excel("itcompany.xlsx")
+glimpse(mydata)
+str(mydata)
+```
+
+The list of companies here is large and several of them have missing  values in the columns. So, we omit any such rows that have any attribute missing.
+
+```{r ommitting rows with missing values}
+mydata <- na.omit(mydata) 
+view(mydata)
+glimpse(mydata)
+```
+
+### Getting a pair plot of all the variables to check correlations
+
+```{r Pair Plots}
+pairs(mydata[c(
+  "pnl", "sales", "fin", "expenses", "assets", "liabilities", "csr"
+)],
+col = "red",
+pch = 16,
+labels = c(
+  "pnl", "sales", "fin", "expenses", "assets", "liabilities", "csr"
+),
+main = "Pair plot of all variables"
+)
+```
+
+# 1. Making the linear regression model...
+A linear regression model is made using csr expenditure as the dependent variable, and profit, sales, income from financial services, expenses, assets and liabilities as the independent variables. We are going to test how well the csr expenditure can be predicted based on these factors...
+```{r lm model}
+lmmodel <- lm(csr ~ pnl+sales+fin+expenses+assets+liabilities, data = mydata)
+summary(lmmodel)
+```
+
+
+### Analysis
+
+As we can see, R-squared = 0.9934 and Adjusted R-squared = 0.9933. It implies that our model explains the variation upto 99%!
+
+### But 
+The model is not free of errors. These need to be tested out
+
+
+
+# 2. Test for heteroskedasticity
+##### Note: 
+Heteroskedasticity occurs when the variance of residuals is not a constant value, but it varies as a function of the variables x1, x2,....xk
+
+H0 : all coefficients are 0
+Ha : coefficients are not 0
+
+so, if p-value < 0.05, then it implies that null hypothesis is to be rejected and there EXISTS heteroskedasticity in our model.
+
+#### Collecting the variables and fitted values.
+
+```{r residuals and fitted}
+my_residuals <- resid(lmmodel)
+fitted_val <- fitted(lmmodel)
+
+residuals_sq <- my_residuals^2
+```
+
+
+#### Plotting the residuals against each variable.
+
+```{r plotting the residuals}
+plot_residuals <- function(variable) {
+  ggplot(mydata, aes_string(x = variable, y = my_residuals)) +
+    geom_point() +
+    geom_smooth(method = "loess", col = "red") +
+    labs(title = paste("Residuals vs", variable), x = variable, y = "Residuals")
+}
+
+# Plot residuals against each predictor
+plot_residuals("pnl")
+plot_residuals("sales")
+plot_residuals("fin")
+plot_residuals("expenses")
+plot_residuals("assets")
+plot_residuals("liabilities")
+```
+
+There seems to be significant heteroskedasticity present.
+
+There are several tests that can be done on a regression model to test for heteroskedasticity...this project conducts 4 of them, namely the Breusch-Pagan Test, White's Test, Park's Test and Goldfeld-Quant Test.
+
+```{r creating a printresult function}
+printresult <- function(pvalue, testname, errorname) {
+  cat("P value is = ", pvalue, "\n")
+  
+  if (pvalue >= 0.05) {
+    cat("Result: The null hypothesis of ", testname, " cannot be rejected. There exists NO significant ", errorname, "\n")
+  } else {
+    cat("Result: The null hypothesis of ", testname, " is rejected!! There EXISTS", errorname, "\n")
+  }
+}
+
+```
+
+
+##   1) Breusch-Pagan Test
+```{r breusch pagan test manual}
+
+auxi_model_bp <- lm(residuals_sq ~ pnl+sales+fin+expenses+assets+liabilities, data = mydata)
+
+
+summary_auxi_bp <- summary(auxi_model_bp)
+
+summary_auxi_bp
+
+r_squared_bp <- summary_auxi_bp$r.squared
+n <- nrow(mydata)
+
+n
+
+bp_statistic <- n * r_squared_bp
+
+df_manual_bp <- length(coefficients(lmmodel)) - 1  # Number of predictors
+
+p_value_manual <- pchisq(bp_statistic, df_manual_bp, lower.tail = FALSE)
+
+cat("R-squared:", r_squared_bp, "\n")
+cat("BP Statistic:", bp_statistic, "\n")
+cat("Degrees of Freedom:", df_manual_bp, "\n")
+cat("p-value:", p_value_manual, "\n")
+
+printresult(p_value_manual, "Homoskedasticity", "Heteroskedasticity")
+
+```
+
+
+
+##   2)White's test
+
+```{r Whites test}
+# we already have values of fitted variables and the residual squares...
+fitted_sq <- fitted_val^2
+
+auxi_model_w <- lm(residuals_sq ~ fitted_val + fitted_sq, data = mydata)
+
+r_squared_w <- summary(auxi_model_w)$r.squared
+bp_statistic_w <- n* r_squared_w
+
+df_manual_w <- 2  # because we have fit and fit_sq
+p_value <- 1 - pchisq(bp_statistic_w, df_manual_w)
+
+#cat("p-value:", p_value, "\n")
+
+printresult(p_value, "Homoskedasticity", "Heteroskedasticity")
+
+```
+
+##   3) Park's test
+helps find which are the significant variables that are causing heteroskedasticity! To be used later in Goldfeld Quant test.
+```{r parks test}
+
+log_residuals_sq <- log(residuals_sq)
+
+#making the auxiliary model
+auxi_model_park <- lm(log_residuals_sq ~ log(pnl) + log(sales) + log(fin) + log(expenses) + log(assets) + log(liabilities), data = mydata)
+
+summary_auxi_park <- summary(auxi_model_park)
+
+summary_auxi_park
+
+r_squared_park <- summary_auxi_park$r.squared
+
+#finding the test stat
+n <- nrow(mydata)
+p_stat <- n * r_squared_park
+
+#finding the df
+
+df_park <- length(coefficients(auxi_model_park)) - 1  # Excluding the intercept
+
+#The chi square test is used
+p_value_park <- pchisq(p_stat, df_park, lower.tail = FALSE)
+
+cat("R Squared: ", r_squared_park, "\n")
+cat("Degrees of Freedom:", df_park, "\n")
+cat("BP Statistic:", p_stat, "\n")
+#cat("p-value:", p_value_park, "\n")
+
+printresult(p_value_park, "Homoskedasticity", "Heteroskedasticity")
+```
+
+##   4) Goldfeld Quant Test
+
+For this test, 20% of the data will be omitted and the remaining data is divided into two groups.
+The data is first sorted on the basis of one the variables assumed to be the main cause of heteroskedasticity...we're taking this as "sales".
+```{r setting groups for goldfeld}
+
+sorted_data <- mydata[order(mydata$sales), ]
+
+n <- nrow(sorted_data)
+c <- floor(0.20 * n) #keeping c as 20% of the data....c will then be omitted!
+
+group_size <- (n-c)/2
+
+group1 <- sorted_data[1:group_size, ]
+group2 <- sorted_data[(group_size+c+1): n, ]
+
+```
+
+now regression is run for both groups...
+
+```{r regression for goldfeld groups}
+
+model1 <- lm(csr ~ pnl+sales+fin+expenses+assets+liabilities, data = group1)
+
+rss1 <- sum(resid(model1)^2)
+
+model2 <- lm(csr ~ pnl+sales+fin+expenses+assets+liabilities, data = group2)
+
+rss2 <- sum(resid(model2)^2)
+
+
+gq_statistic <- rss2/rss1
+
+```
+
+* df1 is associated with the numerator of the F-statistic and should correspond to the group with the larger RSS.
+* df2 is associated with the denominator of the F-statistic and should correspond to the group with the smaller RSS.
+
+```{r finding df and pvalue for goldfeld}
+
+df1_gq <- nrow(group2) - length(coefficients(model2))
+df2_gq <- nrow(group1) - length(coefficients(model1))
+
+
+p_value_gq <- pf(gq_statistic, df1_gq, df2_gq, lower.tail = FALSE)
+
+cat("Goldfeld-Quandt Test Statistic:", gq_statistic, "\n")
+cat("Degrees of Freedom:", df1_gq, df2_gq, "\n")
+#cat("p-value:", p_value_gq, "\n")
+
+printresult(p_value_gq, "Homoskedasticity", "Heteroskedasticity")
+
+```
+
+
+# 3) Test for Multicollinearity
+
+```{r multicollinearity test}
+#vif(lmmodel) this is creating error....one variable is perfectly collinear with another.
+alias(lmmodel)
+```
+
+What can be seen here is that there is a perfect multicollinearity between the "assets" and "liabilities" variables. In other words, "assets" can be expressed as a linear combination of "liabilities" or vice versa.
+
+This situation makes it impossible to estimate the coefficients for these variables separately. So, we remove one of the variables from the model, i.e. liabilities, to avoid multicollinearity. Checking the VIFS now...
+
+```{r correlation check}
+lm_updated <- lm(csr ~ pnl + sales + fin + expenses + assets, data = mydata)
+vif(lm_updated)
+cor_matrix <- cor(mydata[c("pnl", "sales", "fin", "expenses", "assets")])
+cor_matrix
+```
+
+As the vifs have very high value, there is more than sufficient proof to say that significant multicollinearity does exist! This is treated later in the project using the concept of Principal Component Analysis. 
+
+# 4) Test for Autocorrelation
+
+##   1) Durbin Watson Test
+
+```{r durbin watson}
+dwtest(formula = lmmodel, alternative = "two.sided")
+```
+
+As p-value is > 0.05, there exists NO SIGNIFICANT AUTOCORRELATION.
+
+##   2) Breusch Godfrey Test
+We can check again using the BG Test.
+
+```{r Breusch Godfrey}
+bg_test_result_2 <- bgtest(lmmodel, order = 2)
+print(bg_test_result_2)
+```
+As p-value is > 0.05, there exists NO SIGNIFICANT AUTOCORRELATION.
+
+
+# 5) Remedy for Mutlicollinearity
+### Principal Component Analysis (PCA)
+
+PCA is a technique used for dimension reduction. That is, it reduces the number of variables while retaining all important information.
+
+```{r}
+ind_vars <- mydata[, c("pnl", "sales", "expenses", "fin", "assets", "liabilities")]
+
+pca_result <- prcomp(ind_vars, scale = TRUE)
+
+selected_pcs <- pca_result $ x[, 1:3] #we are only going to consider the three most significant PCs
+
+new_lmmodel <- lm(csr ~ selected_pcs, data = mydata)
+
+summary(new_lmmodel)
+
+```
+
+Now a scree plot must be created. For that a new dataframe is created containing the percentage of total variance contributed by each principal component, and of course the names of the PCs.
+
+```{r Scree Plotting}
+
+pca_variance <- (pca_result $sdev)^2
+
+pca_var_perc <- round( pca_variance/ sum(pca_variance)  * 100)
+
+scree_data <- data.frame(
+  PC = 1:length(pca_var_perc),
+  variance_pc = pca_var_perc
+)
+
+View(scree_data)
+
+ggplot(data = scree_data, aes(x = PC, y = variance_pc)) +
+  geom_bar(stat = "identity", fill = "skyblue", width = 0.5) +
+  labs(title = "Scree Plot", x = "Principal Components", y = "Variance Explained (%)")
+```
+
+## Impact of PCA on this model...
+What has occurred here is that PCA was used to transform the 6 financial variables into 3 new variables called the Principal Components (PCs). These PCs are inherently UNCORRELATED to each other (by definition). Therefore, multicollinearity is removed.
+
+These PCs are linear combinations of the original variables and are designed to capture the most important patterns in the data. 
+
+Each PC is a weighted average of the original variables. 
+
+So, the dependent variable is strongly associated with not the original variable, but, a combined effect of the original dependent variables as per the loadings of the PCs.
+
+The coefficients in the linear combination can be found by accessing the 'rotation' of the pca_result, which is nothing but the Loadings.
+
+```{r view Loadings}
+print(pca_result $ rotation)
+```
+
+#### PC1=0.4061⋅pnl+0.4124⋅sales+0.4114⋅expenses+0.4050⋅fin+0.4073⋅assets+0.4073⋅liabilities
+#### PC2=0.4576⋅pnl+0.1495⋅sales+0.0702⋅expenses+0.4128⋅fin−0.5445⋅assets−0.5445⋅liabilities
+#### PC3=−0.1562⋅pnl+0.4951⋅sales+0.5786⋅expenses−0.5760⋅fin−0.1787⋅assets−0.1787⋅liabilities
+
+
+Is this new and improved model free of autocorrelation and heteroskedasticity? 
+
+# 6) Test for Autocorrelation on the improved model...
+
+```{r durbin watson test after pca}
+dwtest(formula = new_lmmodel, alternative = "two.sided")
+```
+As p-value is > 0.05, there exists NO SIGNIFICANT AUTOCORRELATION.
+
+# 7) Test for Heteroskedasticity on the improved model...
+
+Let's just go with Breusch Pagan test for this.
+
+```{r heteroskedasticity test on pca model}
+##bptest(new_lmmodel, ~ selected_pcs, data = mydata, studentize = TRUE)
+
+residuals_sq <- (resid(new_lmmodel))^2
+
+auxi_model_bp <- lm(residuals_sq ~ selected_pcs, data = mydata)
+
+
+summary_auxi_bp <- summary(auxi_model_bp)
+
+summary_auxi_bp
+
+r_squared_bp <- summary_auxi_bp$r.squared
+n <- nrow(mydata)
+
+n
+
+bp_statistic <- n * r_squared_bp
+
+df_manual_bp <- length(coefficients(new_lmmodel)) - 1  # Number of predictors
+
+p_value_manual <- pchisq(bp_statistic, df_manual_bp, lower.tail = FALSE)
+
+cat("R-squared:", r_squared_bp, "\n")
+cat("BP Statistic:", bp_statistic, "\n")
+cat("Degrees of Freedom:", df_manual_bp, "\n")
+#cat("p-value:", p_value_manual, "\n")
+
+printresult(p_value_manual, "Homoskedasticity", "Heteroskedasticity")
+```
+
+
+# 8) Remedy for heteroskedasticity
+### Model Transformation
+
+Now, using model transformation to combat heteroskedasticity, the log of dependent variable csr is taken. Note: since there may be a possibility of negative values, a small constant is added to csr to shift the values and avoid the error of negative log.
+
+```{r}
+mydata$log_csr <- log(mydata$csr + 1)  # Adding a small constant (e.g., 1) to avoid non-positive values
+transformed_model <- lm(log_csr ~ selected_pcs, data = mydata)
+summary(transformed_model)
+```
+
+Checking for heteroskedasticity again....
+```{r}
+#Check for heteroskedasticity again
+#bptest(transformed_model, ~ selected_pcs, data = mydata, studentize = TRUE)
+
+residuals_sq <- (resid(transformed_model))^2
+
+auxi_model_bp <- lm(residuals_sq ~ selected_pcs, data = mydata)
+
+
+summary_auxi_bp <- summary(auxi_model_bp)
+
+summary_auxi_bp
+
+r_squared_bp <- summary_auxi_bp$r.squared
+n <- nrow(mydata)
+
+n
+
+bp_statistic <- n * r_squared_bp
+
+df_manual_bp <- length(coefficients(transformed_model)) - 1  # Number of predictors
+
+p_value_manual <- pchisq(bp_statistic, df_manual_bp, lower.tail = FALSE)
+
+cat("R-squared:", r_squared_bp, "\n")
+cat("BP Statistic:", bp_statistic, "\n")
+cat("Degrees of Freedom:", df_manual_bp, "\n")
+#cat("p-value:", p_value_manual, "\n")
+
+printresult(p_value_manual, "Homoskedasticity", "Heteroskedasticity")
+
+```
+
+While heteroskedasticity has not completely been removed, it has clearly been reduced judging from the p-value.
+
+
+
+# 9) Final Interpretation
+
+Let's take a look at the summary of transformed_model once more....
+```{r}
+summary(transformed_model)
+```
+
+
+The regression model summary shows some interesting results. 
+
+The intercept is at 2.61270, and it’s highly significant (p < 2e-16). PC1 has a positive effect with a coefficient of 0.35708 and is also very significant (p < 2e-16). PC2, on the other hand, has a negative impact with a coefficient of -1.28536 (p = 3.36e-10). PC3 is positively affecting the outcome with a coefficient of 0.79799, and it’s significant as well (p = 0.00779).
+
+Looking at the model fit, the residual standard error is 1.251. The R-squared value is 0.3917, meaning the model explains 39.17% of the variance in the data. The adjusted R-squared is slightly lower at 0.3855, but still solid. The F-statistic is 62.89 with a p-value of less than 2.2e-16, indicating the overall model is highly significant.
+
+
+#### In summary, the regression model shows that the selected principal components (PC1, PC2, and PC3) significantly predict the log-transformed CSR matrix. PC1 and PC3 have positive effects, while PC2 has a negative effect on the log-transformed CSR values. The model explains a moderate portion of the variance, and the overall fit is statistically significant.
+
+
